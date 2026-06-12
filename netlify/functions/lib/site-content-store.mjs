@@ -26,11 +26,28 @@ function blankSections() {
   };
 }
 
+function normalizeEntries(entries) {
+  if (!Array.isArray(entries)) {
+    return [];
+  }
+
+  return entries
+    .map((entry, index) => ({
+      ...entry,
+      order: Number.isFinite(entry?.order) ? entry.order : index,
+    }))
+    .sort((left, right) => left.order - right.order)
+    .map((entry, index) => ({
+      ...entry,
+      order: index,
+    }));
+}
+
 function normalizeSections(raw) {
   return {
-    story: Array.isArray(raw?.story) ? raw.story : [],
-    development: Array.isArray(raw?.development) ? raw.development : [],
-    businesses: Array.isArray(raw?.businesses) ? raw.businesses : [],
+    story: normalizeEntries(raw?.story),
+    development: normalizeEntries(raw?.development),
+    businesses: normalizeEntries(raw?.businesses),
   };
 }
 

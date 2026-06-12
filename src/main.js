@@ -99,6 +99,23 @@ function setReorderState(active, sectionKey = "", entryId = "", direction = "") 
   };
 }
 
+function normalizeEntries(entries) {
+  if (!Array.isArray(entries)) {
+    return [];
+  }
+
+  return entries
+    .map((entry, index) => ({
+      ...entry,
+      order: Number.isFinite(entry?.order) ? entry.order : index,
+    }))
+    .sort((left, right) => left.order - right.order)
+    .map((entry, index) => ({
+      ...entry,
+      order: index,
+    }));
+}
+
 function loadLocalSections() {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
@@ -108,9 +125,9 @@ function loadLocalSections() {
 
     const parsed = JSON.parse(raw);
     return {
-      story: Array.isArray(parsed.story) ? parsed.story : [],
-      development: Array.isArray(parsed.development) ? parsed.development : [],
-      businesses: Array.isArray(parsed.businesses) ? parsed.businesses : [],
+      story: normalizeEntries(parsed.story),
+      development: normalizeEntries(parsed.development),
+      businesses: normalizeEntries(parsed.businesses),
     };
   } catch {
     return { story: [], development: [], businesses: [] };
@@ -157,9 +174,9 @@ async function loadSections() {
 
 function normalizeSections(raw) {
   return {
-    story: Array.isArray(raw?.story) ? raw.story : [],
-    development: Array.isArray(raw?.development) ? raw.development : [],
-    businesses: Array.isArray(raw?.businesses) ? raw.businesses : [],
+    story: normalizeEntries(raw?.story),
+    development: normalizeEntries(raw?.development),
+    businesses: normalizeEntries(raw?.businesses),
   };
 }
 
@@ -227,16 +244,17 @@ async function saveEntryToStorage(sectionKey, mode, entry, entryId = null) {
   }
 
   if (mode === "create") {
-    state.sections[sectionKey] = [
+    state.sections[sectionKey] = normalizeEntries([
       {
         id: crypto.randomUUID(),
+        order: 0,
         ...entry,
       },
       ...state.sections[sectionKey],
-    ];
+    ]);
   } else {
-    state.sections[sectionKey] = state.sections[sectionKey].map((item) =>
-      item.id === entryId ? { ...item, ...entry } : item
+    state.sections[sectionKey] = normalizeEntries(
+      state.sections[sectionKey].map((item) => (item.id === entryId ? { ...item, ...entry } : item))
     );
   }
 
@@ -268,7 +286,7 @@ async function deleteEntryFromStorage(sectionKey, entryId) {
     return;
   }
 
-  state.sections[sectionKey] = state.sections[sectionKey].filter((item) => item.id !== entryId);
+  state.sections[sectionKey] = normalizeEntries(state.sections[sectionKey].filter((item) => item.id !== entryId));
   saveLocalSections();
 }
 
@@ -290,7 +308,9 @@ function moveItem(entries, fromIndex, toIndex) {
   return nextEntries;
 }
 
-async function moveEntryInStorage(sectionKey, entryId, direction) {
+async function persistSectionOrder(sectionKey) {
+  const orderedIds = state.sections[sectionKey].map((item) => item.id);
+
   if (state.storageMode === "cloud") {
     const response = await fetch(CONTENT_ENDPOINT, {
       method: "PATCH",
@@ -298,7 +318,7 @@ async function moveEntryInStorage(sectionKey, entryId, direction) {
         "Content-Type": "application/json",
         "x-admin-password": state.adminPassword,
       },
-      body: JSON.stringify({ section: sectionKey, id: entryId, direction }),
+      body: JSON.stringify({ section: sectionKey, orderedIds }),
     });
 
     const payload = await readResponsePayload(response);
@@ -333,7 +353,7 @@ function moveEntryLocally(sectionKey, entryId, direction) {
     return false;
   }
 
-  state.sections[sectionKey] = nextEntries;
+  state.sections[sectionKey] = normalizeEntries(nextEntries);
   return true;
 }
 
@@ -796,7 +816,7 @@ function bindEvents() {
       renderApp();
 
       try {
-        await moveEntryInStorage(sectionKey, entryId, direction);
+        await persistSectionOrder(sectionKey);
         setFlashMessage(direction === "up" ? "Icerik yukariya tasindi." : "Icerik asagiya tasindi.");
       } catch (error) {
         state.sections = previousSections;

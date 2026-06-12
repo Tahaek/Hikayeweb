@@ -52,6 +52,13 @@ function moveItem(entries, fromIndex, toIndex) {
   return nextEntries;
 }
 
+function normalizeEntryOrder(entries) {
+  return entries.map((entry, index) => ({
+    ...entry,
+    order: index,
+  }));
+}
+
 export default async (request) => {
   if (request.method === "GET") {
     const sections = await getSections();
@@ -78,7 +85,7 @@ export default async (request) => {
       return jsonResponse({ message: "At least one content field is required." }, 400);
     }
 
-    sections[section] = [{ id: randomUUID(), ...entry }, ...sections[section]];
+    sections[section] = normalizeEntryOrder([{ id: randomUUID(), ...entry }, ...sections[section]]);
     await saveSections(sections);
     return jsonResponse({ sections });
   }
@@ -91,7 +98,9 @@ export default async (request) => {
       return jsonResponse({ message: "Entry id and at least one content field are required." }, 400);
     }
 
-    sections[section] = sections[section].map((item) => (item.id === entryId ? { ...item, ...entry } : item));
+    sections[section] = normalizeEntryOrder(
+      sections[section].map((item) => (item.id === entryId ? { ...item, ...entry } : item))
+    );
     await saveSections(sections);
     return jsonResponse({ sections });
   }
@@ -102,7 +111,7 @@ export default async (request) => {
       return jsonResponse({ message: "Entry id is required." }, 400);
     }
 
-    sections[section] = sections[section].filter((item) => item.id !== entryId);
+    sections[section] = normalizeEntryOrder(sections[section].filter((item) => item.id !== entryId));
     await saveSections(sections);
     return jsonResponse({ sections });
   }
@@ -110,6 +119,25 @@ export default async (request) => {
   if (request.method === "PATCH") {
     const entryId = typeof payload.id === "string" ? payload.id : "";
     const direction = payload.direction === "up" || payload.direction === "down" ? payload.direction : "";
+    const orderedIds = Array.isArray(payload.orderedIds)
+      ? payload.orderedIds.filter((value) => typeof value === "string")
+      : [];
+
+    if (orderedIds.length) {
+      const currentIds = sections[section].map((item) => item.id);
+
+      if (
+        orderedIds.length !== currentIds.length ||
+        orderedIds.some((value) => !currentIds.includes(value))
+      ) {
+        return jsonResponse({ message: "Ordered ids do not match section entries." }, 400);
+      }
+
+      const orderedMap = new Map(sections[section].map((item) => [item.id, item]));
+      sections[section] = normalizeEntryOrder(orderedIds.map((id) => orderedMap.get(id)).filter(Boolean));
+      await saveSections(sections);
+      return jsonResponse({ sections });
+    }
 
     if (!entryId || !direction) {
       return jsonResponse({ message: "Entry id and direction are required." }, 400);
@@ -121,7 +149,7 @@ export default async (request) => {
     }
 
     const targetIndex = direction === "up" ? currentIndex - 1 : currentIndex + 1;
-    sections[section] = moveItem(sections[section], currentIndex, targetIndex);
+    sections[section] = normalizeEntryOrder(moveItem(sections[section], currentIndex, targetIndex));
     await saveSections(sections);
     return jsonResponse({ sections });
   }
