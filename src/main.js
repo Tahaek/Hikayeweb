@@ -47,6 +47,12 @@ const state = {
   flashMessage: "",
   saveState: "idle",
   saveMessage: "",
+  reorderState: {
+    active: false,
+    sectionKey: "",
+    entryId: "",
+    direction: "",
+  },
 };
 
 function blankEntry() {
@@ -82,6 +88,15 @@ function setSaveState(mode, message = "") {
 
 function clearSaveState() {
   setSaveState("idle", "");
+}
+
+function setReorderState(active, sectionKey = "", entryId = "", direction = "") {
+  state.reorderState = {
+    active,
+    sectionKey,
+    entryId,
+    direction,
+  };
 }
 
 function loadLocalSections() {
@@ -300,11 +315,26 @@ async function moveEntryInStorage(sectionKey, entryId, direction) {
     return;
   }
 
+  saveLocalSections();
+}
+
+function moveEntryLocally(sectionKey, entryId, direction) {
   const entries = state.sections[sectionKey];
   const currentIndex = entries.findIndex((item) => item.id === entryId);
+
+  if (currentIndex === -1) {
+    return false;
+  }
+
   const targetIndex = direction === "up" ? currentIndex - 1 : currentIndex + 1;
-  state.sections[sectionKey] = moveItem(entries, currentIndex, targetIndex);
-  saveLocalSections();
+  const nextEntries = moveItem(entries, currentIndex, targetIndex);
+
+  if (nextEntries.every((item, index) => item.id === entries[index]?.id)) {
+    return false;
+  }
+
+  state.sections[sectionKey] = nextEntries;
+  return true;
 }
 
 function renderFlashMessage() {
@@ -449,7 +479,9 @@ function renderEntries(sectionKey) {
                           data-direction="up"
                           data-section="${sectionKey}"
                           data-entry-id="${entry.id}"
-                          ${index === 0 ? "disabled" : ""}
+                          ${
+                            index === 0 || state.reorderState.active ? "disabled" : ""
+                          }
                         >
                           Yukari
                         </button>
@@ -460,7 +492,9 @@ function renderEntries(sectionKey) {
                           data-direction="down"
                           data-section="${sectionKey}"
                           data-entry-id="${entry.id}"
-                          ${index === entries.length - 1 ? "disabled" : ""}
+                          ${
+                            index === entries.length - 1 || state.reorderState.active ? "disabled" : ""
+                          }
                         >
                           Asagi
                         </button>
@@ -741,18 +775,34 @@ function bindEvents() {
 
   document.querySelectorAll("[data-action='move-entry']").forEach((button) => {
     button.addEventListener("click", async () => {
+      if (state.reorderState.active) {
+        return;
+      }
+
       clearFlashMessage();
       clearSaveState();
 
       const sectionKey = button.dataset.section;
       const entryId = button.dataset.entryId;
       const direction = button.dataset.direction;
+      const previousSections = structuredClone(state.sections);
+      const moved = moveEntryLocally(sectionKey, entryId, direction);
+
+      if (!moved) {
+        return;
+      }
+
+      setReorderState(true, sectionKey, entryId, direction);
+      renderApp();
 
       try {
         await moveEntryInStorage(sectionKey, entryId, direction);
         setFlashMessage(direction === "up" ? "Icerik yukariya tasindi." : "Icerik asagiya tasindi.");
       } catch (error) {
+        state.sections = previousSections;
         setFlashMessage(error.message || "Icerik tasinamadi.");
+      } finally {
+        setReorderState(false);
       }
 
       renderApp();
