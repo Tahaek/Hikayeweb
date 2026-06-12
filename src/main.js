@@ -121,6 +121,17 @@ function normalizeEntries(entries) {
     }));
 }
 
+function reindexEntries(entries) {
+  if (!Array.isArray(entries)) {
+    return [];
+  }
+
+  return entries.map((entry, index) => ({
+    ...entry,
+    order: index,
+  }));
+}
+
 function loadLocalSections() {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
@@ -249,7 +260,7 @@ async function saveEntryToStorage(sectionKey, mode, entry, entryId = null) {
   }
 
   if (mode === "create") {
-    state.sections[sectionKey] = normalizeEntries([
+    state.sections[sectionKey] = reindexEntries([
       {
         id: crypto.randomUUID(),
         order: 0,
@@ -258,7 +269,7 @@ async function saveEntryToStorage(sectionKey, mode, entry, entryId = null) {
       ...state.sections[sectionKey],
     ]);
   } else {
-    state.sections[sectionKey] = normalizeEntries(
+    state.sections[sectionKey] = reindexEntries(
       state.sections[sectionKey].map((item) => (item.id === entryId ? { ...item, ...entry } : item))
     );
   }
@@ -291,7 +302,7 @@ async function deleteEntryFromStorage(sectionKey, entryId) {
     return;
   }
 
-  state.sections[sectionKey] = normalizeEntries(state.sections[sectionKey].filter((item) => item.id !== entryId));
+  state.sections[sectionKey] = reindexEntries(state.sections[sectionKey].filter((item) => item.id !== entryId));
   saveLocalSections();
 }
 
@@ -358,7 +369,7 @@ function moveEntryLocally(sectionKey, entryId, direction) {
     return false;
   }
 
-  state.sections[sectionKey] = normalizeEntries(nextEntries);
+  state.sections[sectionKey] = reindexEntries(nextEntries);
   return true;
 }
 
