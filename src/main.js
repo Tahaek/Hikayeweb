@@ -45,6 +45,8 @@ const state = {
   editingId: null,
   draft: blankEntry(),
   flashMessage: "",
+  saveState: "idle",
+  saveMessage: "",
 };
 
 function blankEntry() {
@@ -71,6 +73,15 @@ function setFlashMessage(message) {
 
 function clearFlashMessage() {
   state.flashMessage = "";
+}
+
+function setSaveState(mode, message = "") {
+  state.saveState = mode;
+  state.saveMessage = message;
+}
+
+function clearSaveState() {
+  setSaveState("idle", "");
 }
 
 function loadLocalSections() {
@@ -155,6 +166,22 @@ async function verifyAdminPassword(password) {
   }
 }
 
+async function readResponsePayload(response) {
+  const rawText = await response.text();
+
+  try {
+    return {
+      rawText,
+      data: rawText ? JSON.parse(rawText) : {},
+    };
+  } catch {
+    return {
+      rawText,
+      data: {},
+    };
+  }
+}
+
 async function saveEntryToStorage(sectionKey, mode, entry, entryId = null) {
   if (state.storageMode === "cloud") {
     const response = await fetch(CONTENT_ENDPOINT, {
@@ -170,13 +197,17 @@ async function saveEntryToStorage(sectionKey, mode, entry, entryId = null) {
       }),
     });
 
+    const payload = await readResponsePayload(response);
+
     if (!response.ok) {
-      const payload = await response.json().catch(() => ({}));
-      throw new Error(payload.message || "Kayit saklanamadi.");
+      if (response.status === 401) {
+        throw new Error("Yonetici sifresi sunucuda dogrulanamadi. Netlify sifresini kontrol et.");
+      }
+
+      throw new Error(payload.data.message || payload.rawText || "Kayit saklanamadi.");
     }
 
-    const payload = await response.json();
-    state.sections = normalizeSections(payload.sections);
+    state.sections = normalizeSections(payload.data.sections);
     return;
   }
 
@@ -208,13 +239,17 @@ async function deleteEntryFromStorage(sectionKey, entryId) {
       body: JSON.stringify({ section: sectionKey, id: entryId }),
     });
 
+    const payload = await readResponsePayload(response);
+
     if (!response.ok) {
-      const payload = await response.json().catch(() => ({}));
-      throw new Error(payload.message || "Kayit silinemedi.");
+      if (response.status === 401) {
+        throw new Error("Silme istegi reddedildi. Yonetici sifresi sunucuda dogrulanamadi.");
+      }
+
+      throw new Error(payload.data.message || payload.rawText || "Kayit silinemedi.");
     }
 
-    const payload = await response.json();
-    state.sections = normalizeSections(payload.sections);
+    state.sections = normalizeSections(payload.data.sections);
     return;
   }
 
@@ -228,6 +263,21 @@ function renderFlashMessage() {
   }
 
   return `<p class="flash-message">${escapeHtml(state.flashMessage)}</p>`;
+}
+
+function renderSaveMessage() {
+  if (state.saveState === "idle" || !state.saveMessage) {
+    return "";
+  }
+
+  const className =
+    state.saveState === "error"
+      ? "flash-message flash-message--error"
+      : state.saveState === "success"
+        ? "flash-message flash-message--success"
+        : "flash-message";
+
+  return `<p class="${className}">${escapeHtml(state.saveMessage)}</p>`;
 }
 
 function renderEditor(sectionKey) {
@@ -276,11 +326,18 @@ function renderEditor(sectionKey) {
             : ""
         }
         <div class="editor-actions">
-          <button class="primary-button" type="submit">
-            ${state.editorMode === "create" ? "Kaydet" : "Guncelle"}
+          <button class="primary-button" type="submit" ${state.saveState === "saving" ? "disabled" : ""}>
+            ${
+              state.saveState === "saving"
+                ? "Kaydediliyor..."
+                : state.editorMode === "create"
+                  ? "Kaydet"
+                  : "Guncelle"
+            }
           </button>
           <button class="ghost-button" type="button" data-action="cancel-editor">Iptal</button>
         </div>
+        ${renderSaveMessage()}
       </form>
     </article>
   `;
@@ -497,6 +554,7 @@ function bindEvents() {
   document.querySelectorAll("[data-tab]").forEach((button) => {
     button.addEventListener("click", () => {
       clearFlashMessage();
+      clearSaveState();
       state.activeTab = button.dataset.tab;
       renderApp();
     });
@@ -505,6 +563,7 @@ function bindEvents() {
   document.querySelectorAll("[data-action='open-admin']").forEach((button) => {
     button.addEventListener("click", () => {
       clearFlashMessage();
+      clearSaveState();
       const sectionKey = button.dataset.section || state.activeTab;
 
       if (state.isEditMode) {
@@ -539,6 +598,7 @@ function bindEvents() {
       state.editingId = null;
       state.draft = blankEntry();
       setFlashMessage("Duzenleme kilidi yeniden kapatildi.");
+      clearSaveState();
       renderApp();
     });
   });
@@ -548,6 +608,7 @@ function bindEvents() {
       state.editorMode = null;
       state.editingId = null;
       state.draft = blankEntry();
+      clearSaveState();
       renderApp();
     });
   });
@@ -579,6 +640,7 @@ function bindEvents() {
         imageDataUrl: entry.imageDataUrl || "",
         imageAlt: entry.imageAlt || "",
       };
+      clearSaveState();
       renderApp();
     });
   });
@@ -629,6 +691,7 @@ function bindEvents() {
       state.passwordError = "";
       state.passwordInput = "";
       setFlashMessage("Duzenleme kilidi acildi.");
+      clearSaveState();
       startCreatingEntry(state.editorSection || state.activeTab);
     });
   }
@@ -653,7 +716,6 @@ function bindEvents() {
     contentForm.addEventListener("submit", async (event) => {
       event.preventDefault();
       clearFlashMessage();
-
       const formData = new FormData(contentForm);
       const nextEntry = {
         title: String(formData.get("title") ?? "").trim(),
@@ -664,18 +726,25 @@ function bindEvents() {
 
       if (!nextEntry.title && !nextEntry.body && !nextEntry.imageDataUrl) {
         setFlashMessage("En az bir baslik, metin veya gorsel eklemelisin.");
+        setSaveState("error", "Kayit baslatilmadi.");
         renderApp();
         return;
       }
 
+      state.draft = { ...nextEntry };
+      setSaveState("saving", "Kayit gonderiliyor...");
+      renderApp();
+
       try {
         await saveEntryToStorage(state.editorSection, state.editorMode, nextEntry, state.editingId);
         setFlashMessage(state.editorMode === "create" ? "Yeni icerik eklendi." : "Icerik guncellendi.");
+        setSaveState("success", "Kayit tamamlandi.");
         state.editorMode = null;
         state.editingId = null;
         state.draft = blankEntry();
       } catch (error) {
         setFlashMessage(error.message || "Icerik kaydedilemedi.");
+        setSaveState("error", error.message || "Icerik kaydedilemedi.");
       }
 
       renderApp();
@@ -698,6 +767,7 @@ function startCreatingEntry(sectionKey) {
   state.editorSection = sectionKey;
   state.editingId = null;
   state.draft = blankEntry();
+  clearSaveState();
   renderApp();
 }
 
