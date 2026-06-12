@@ -389,6 +389,11 @@ button:disabled {
   padding: 10px 14px;
 }
 
+.ghost-button--compact {
+  min-width: 72px;
+  padding: 10px 12px;
+}
+
 .ghost-button {
   border-color: rgba(255, 255, 255, 0.12);
   background: transparent;

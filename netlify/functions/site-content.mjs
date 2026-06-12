@@ -35,6 +35,23 @@ function validateSection(section) {
   return typeof section === "string" && SECTION_KEYS.has(section);
 }
 
+function moveItem(entries, fromIndex, toIndex) {
+  if (
+    fromIndex < 0 ||
+    toIndex < 0 ||
+    fromIndex >= entries.length ||
+    toIndex >= entries.length ||
+    fromIndex === toIndex
+  ) {
+    return [...entries];
+  }
+
+  const nextEntries = [...entries];
+  const [movedItem] = nextEntries.splice(fromIndex, 1);
+  nextEntries.splice(toIndex, 0, movedItem);
+  return nextEntries;
+}
+
 export default async (request) => {
   if (request.method === "GET") {
     const sections = await getSections();
@@ -86,6 +103,25 @@ export default async (request) => {
     }
 
     sections[section] = sections[section].filter((item) => item.id !== entryId);
+    await saveSections(sections);
+    return jsonResponse({ sections });
+  }
+
+  if (request.method === "PATCH") {
+    const entryId = typeof payload.id === "string" ? payload.id : "";
+    const direction = payload.direction === "up" || payload.direction === "down" ? payload.direction : "";
+
+    if (!entryId || !direction) {
+      return jsonResponse({ message: "Entry id and direction are required." }, 400);
+    }
+
+    const currentIndex = sections[section].findIndex((item) => item.id === entryId);
+    if (currentIndex === -1) {
+      return jsonResponse({ message: "Entry not found." }, 404);
+    }
+
+    const targetIndex = direction === "up" ? currentIndex - 1 : currentIndex + 1;
+    sections[section] = moveItem(sections[section], currentIndex, targetIndex);
     await saveSections(sections);
     return jsonResponse({ sections });
   }

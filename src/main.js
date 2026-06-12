@@ -257,6 +257,56 @@ async function deleteEntryFromStorage(sectionKey, entryId) {
   saveLocalSections();
 }
 
+function moveItem(entries, fromIndex, toIndex) {
+  if (
+    !Array.isArray(entries) ||
+    fromIndex < 0 ||
+    toIndex < 0 ||
+    fromIndex >= entries.length ||
+    toIndex >= entries.length ||
+    fromIndex === toIndex
+  ) {
+    return Array.isArray(entries) ? [...entries] : [];
+  }
+
+  const nextEntries = [...entries];
+  const [movedItem] = nextEntries.splice(fromIndex, 1);
+  nextEntries.splice(toIndex, 0, movedItem);
+  return nextEntries;
+}
+
+async function moveEntryInStorage(sectionKey, entryId, direction) {
+  if (state.storageMode === "cloud") {
+    const response = await fetch(CONTENT_ENDPOINT, {
+      method: "PATCH",
+      headers: {
+        "Content-Type": "application/json",
+        "x-admin-password": state.adminPassword,
+      },
+      body: JSON.stringify({ section: sectionKey, id: entryId, direction }),
+    });
+
+    const payload = await readResponsePayload(response);
+
+    if (!response.ok) {
+      if (response.status === 401) {
+        throw new Error("Tasima istegi reddedildi. Yonetici sifresi sunucuda dogrulanamadi.");
+      }
+
+      throw new Error(payload.data.message || payload.rawText || "Icerik tasinamadi.");
+    }
+
+    state.sections = normalizeSections(payload.data.sections);
+    return;
+  }
+
+  const entries = state.sections[sectionKey];
+  const currentIndex = entries.findIndex((item) => item.id === entryId);
+  const targetIndex = direction === "up" ? currentIndex - 1 : currentIndex + 1;
+  state.sections[sectionKey] = moveItem(entries, currentIndex, targetIndex);
+  saveLocalSections();
+}
+
 function renderFlashMessage() {
   if (!state.flashMessage) {
     return "";
@@ -367,8 +417,7 @@ function renderEntries(sectionKey) {
   return `
     <div class="entry-list">
       ${entries
-        .map(
-          (entry) => `
+        .map((entry, index) => `
             <article class="entry-card">
               ${
                 entry.imageDataUrl
@@ -393,6 +442,28 @@ function renderEntries(sectionKey) {
                   state.isEditMode
                     ? `
                       <div class="entry-card__actions">
+                        <button
+                          class="ghost-button ghost-button--compact"
+                          type="button"
+                          data-action="move-entry"
+                          data-direction="up"
+                          data-section="${sectionKey}"
+                          data-entry-id="${entry.id}"
+                          ${index === 0 ? "disabled" : ""}
+                        >
+                          Yukari
+                        </button>
+                        <button
+                          class="ghost-button ghost-button--compact"
+                          type="button"
+                          data-action="move-entry"
+                          data-direction="down"
+                          data-section="${sectionKey}"
+                          data-entry-id="${entry.id}"
+                          ${index === entries.length - 1 ? "disabled" : ""}
+                        >
+                          Asagi
+                        </button>
                         <button class="ghost-button" type="button" data-action="edit-entry" data-section="${sectionKey}" data-entry-id="${entry.id}">
                           Duzenle
                         </button>
@@ -662,6 +733,26 @@ function bindEvents() {
         state.editorMode = null;
         state.editingId = null;
         state.draft = blankEntry();
+      }
+
+      renderApp();
+    });
+  });
+
+  document.querySelectorAll("[data-action='move-entry']").forEach((button) => {
+    button.addEventListener("click", async () => {
+      clearFlashMessage();
+      clearSaveState();
+
+      const sectionKey = button.dataset.section;
+      const entryId = button.dataset.entryId;
+      const direction = button.dataset.direction;
+
+      try {
+        await moveEntryInStorage(sectionKey, entryId, direction);
+        setFlashMessage(direction === "up" ? "Icerik yukariya tasindi." : "Icerik asagiya tasindi.");
+      } catch (error) {
+        setFlashMessage(error.message || "Icerik tasinamadi.");
       }
 
       renderApp();
