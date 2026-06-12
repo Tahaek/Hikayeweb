@@ -14,8 +14,8 @@ const DATA_FILE = join(
   "site-content.json"
 );
 
-function isNetlifyRuntime() {
-  return Boolean(process.env.NETLIFY || process.env.BLOBS_CONTEXT);
+function shouldUseLocalFileStore() {
+  return Boolean(process.env.NETLIFY_LOCAL || process.platform === "win32");
 }
 
 function blankSections() {
@@ -48,24 +48,40 @@ async function writeLocalSections(sections) {
   await writeFile(DATA_FILE, JSON.stringify(sections, null, 2), "utf8");
 }
 
+async function readBlobSections() {
+  const store = getStore(STORE_NAME);
+  const sections = await store.get(STORE_KEY, { type: "json" });
+  return normalizeSections(sections);
+}
+
+async function writeBlobSections(sections) {
+  const store = getStore(STORE_NAME);
+  await store.setJSON(STORE_KEY, sections);
+}
+
 export async function getSections() {
-  if (isNetlifyRuntime()) {
-    const store = getStore(STORE_NAME);
-    const sections = await store.get(STORE_KEY, { type: "json" });
-    return normalizeSections(sections);
+  if (shouldUseLocalFileStore()) {
+    return readLocalSections();
   }
 
-  return readLocalSections();
+  try {
+    return await readBlobSections();
+  } catch (error) {
+    throw new Error(`Netlify Blobs okunamadi: ${error.message}`);
+  }
 }
 
 export async function saveSections(sections) {
   const normalized = normalizeSections(sections);
 
-  if (isNetlifyRuntime()) {
-    const store = getStore(STORE_NAME);
-    await store.setJSON(STORE_KEY, normalized);
+  if (shouldUseLocalFileStore()) {
+    await writeLocalSections(normalized);
     return;
   }
 
-  await writeLocalSections(normalized);
+  try {
+    await writeBlobSections(normalized);
+  } catch (error) {
+    throw new Error(`Netlify Blobs yazilamadi: ${error.message}`);
+  }
 }
