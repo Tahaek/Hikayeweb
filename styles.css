@@ -449,6 +449,17 @@ button:disabled {
   font-size: 1.15rem;
 }
 
+.entry-card--highlighted {
+  border-color: var(--line-strong);
+  box-shadow: 0 0 0 1px rgba(212, 170, 86, 0.24), var(--shadow);
+}
+
+.entry-card__order {
+  margin: 0 0 8px;
+  color: var(--gold);
+  font-size: 0.8rem;
+}
+
 .entry-card__title--muted {
   color: var(--text-soft);
 }

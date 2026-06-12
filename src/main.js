@@ -53,6 +53,7 @@ const state = {
     entryId: "",
     direction: "",
   },
+  highlightedEntryId: "",
 };
 
 function blankEntry() {
@@ -97,6 +98,10 @@ function setReorderState(active, sectionKey = "", entryId = "", direction = "") 
     entryId,
     direction,
   };
+}
+
+function setHighlightedEntry(entryId = "") {
+  state.highlightedEntryId = entryId;
 }
 
 function normalizeEntries(entries) {
@@ -468,7 +473,10 @@ function renderEntries(sectionKey) {
     <div class="entry-list">
       ${entries
         .map((entry, index) => `
-            <article class="entry-card">
+            <article
+              class="entry-card ${state.highlightedEntryId === entry.id ? "entry-card--highlighted" : ""}"
+              data-entry-id="${entry.id}"
+            >
               ${
                 entry.imageDataUrl
                   ? `
@@ -482,6 +490,7 @@ function renderEntries(sectionKey) {
               }
               <div class="entry-card__header">
                 <div>
+                  <p class="entry-card__order">Sira ${index + 1}</p>
                   ${
                     entry.title
                       ? `<h3 class="entry-card__title">${escapeHtml(entry.title)}</h3>`
@@ -673,6 +682,25 @@ function renderApp() {
   `;
 
   bindEvents();
+  focusHighlightedEntry();
+}
+
+function focusHighlightedEntry() {
+  if (!state.highlightedEntryId) {
+    return;
+  }
+
+  const target = document.querySelector(`[data-entry-id="${state.highlightedEntryId}"]`);
+  if (!target) {
+    return;
+  }
+
+  requestAnimationFrame(() => {
+    target.scrollIntoView({
+      behavior: "smooth",
+      block: "center",
+    });
+  });
 }
 
 function bindEvents() {
@@ -813,6 +841,7 @@ function bindEvents() {
       }
 
       setReorderState(true, sectionKey, entryId, direction);
+      setHighlightedEntry(entryId);
       renderApp();
 
       try {
